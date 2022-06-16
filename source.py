@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from foolbox.attacks import FGSM, LinfDeepFoolAttack
 from foolbox import PyTorchModel
 from itertools import product
 from random import choices

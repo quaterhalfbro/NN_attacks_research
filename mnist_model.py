@@ -2,7 +2,6 @@ from torch import nn
 import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
-from source import random_voice_attack
 import pandas as pd
 
 BATCH_SIZE = 100
