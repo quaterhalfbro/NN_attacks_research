@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from foolbox.attacks import FGSM, LinfDeepFoolAttack
+from foolbox import PyTorchModel
 from itertools import product
 from random import choices
 from sklearn.manifold import TSNE
@@ -10,6 +12,10 @@ from matplotlib.colors import Normalize
 from sklearn.metrics import rand_score, homogeneity_score, completeness_score, v_measure_score, fowlkes_mallows_score, \
     silhouette_score
 from sklearn.cluster import KMeans
+from scipy.ndimage.filters import gaussian_filter
+import albumentations as A
+import cv2
+from PIL import Image
 
 
 def show(images: np.ndarray):
@@ -19,6 +25,79 @@ def show(images: np.ndarray):
         plt.gca().axes.get_yaxis().set_visible(False)
         plt.gca().axes.get_xaxis().set_visible(False)
     plt.show()
+
+
+def compress(image: np.ndarray):
+    x, y = image.shape
+    new_picture = np.zeros((x // 2, y // 2))
+    for i in range(x // 2):
+        for j in range(y // 2):
+            v = (image[2 * i, 2 * j] + image[2 * i, 2 * j + 1] + image[2 * i + 1, 2 * j] + image[
+                1 + 2 * i, 1 + 2 * j]) / 4
+            new_picture[i, j] = v
+    return new_picture
+
+
+def decompress(image: np.ndarray):
+    x, y = image.shape
+    new_picture = np.zeros((x * 2, y * 2))
+    for i in range(x):
+        for j in range(y):
+            v = image[i, j]
+            new_picture[2 * i, 2 * j] = v
+            new_picture[2 * i + 1, 2 * j] = v
+            new_picture[2 * i, 2 * j + 1] = v
+            new_picture[2 * i + 1, 2 * j + 1] = v
+    return new_picture
+
+
+def gaussian(image: np.ndarray):
+    image = decompress(image)
+    image = gaussian_filter(image, sigma=2)
+    image = compress(image)
+    return image
+
+
+def augmentate(image: np.ndarray):
+    transform = A.Compose([
+        A.RandomCrop(width=28, height=28),
+        A.HorizontalFlip(p=0.5),
+        A.RandomBrightnessContrast(p=0.2),
+        A.RandomRain(),
+        A.RandomFog(),
+        A.RandomGamma(),
+        A.RandomSnow()
+    ])
+    image = np.array((image - image.min()) * 255.0 /
+                     (image.max() - image.min()), np.uint8)
+    image = Image.fromarray(image)
+    image.save("ex1.jpg")
+    image = cv2.imread("ex1.jpg")
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = transform(image=image)
+    image = image["image"]
+    new_image = np.zeros((28, 28))
+    for i in range(28):
+        for j in range(28):
+            new_image[i, j] = image[i, j][0]
+    return new_image
+
+
+def attack_on_model(model, images, labels, attack, eps):
+    model.eval()
+    fmodel = PyTorchModel(model, bounds=(0, 255))
+    raw, clipped, is_adv = attack(fmodel, images, labels, epsilons=eps)
+    cx = np.zeros((len(clipped), 28, 28))
+    for im in range(len(clipped)):
+        for i in range(14):
+            for j in range(14):
+                v = (clipped[im, 2 * i, 2 * j] + clipped[im, 2 * i, 2 * j + 1] + clipped[im, 2 * i + 1, 2 * j] +
+                     clipped[im, 1 + 2 * i, 1 + 2 * j]) / 4
+                cx[im, 2 * i + 1, 2 * j] = v
+                cx[im, 2 * i, 2 * j + 1] = v
+                cx[im, 2 * i, 2 * j] = v
+                cx[im, 2 * i + 1, 2 * j + 1] = v
+    return fmodel(cx).argmax(axis=1)
 
 
 def random_voice_attack(dataset: np.ndarray, labels: np.ndarray, attacked_label: int, new_label: int, count: int,

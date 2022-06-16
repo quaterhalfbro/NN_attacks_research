@@ -5,22 +5,63 @@ from torch.utils.data import DataLoader, Dataset
 from source import random_voice_attack
 import pandas as pd
 
-
-BATCH_SIZE = 500
+BATCH_SIZE = 100
 LR = 0.001
-EPOCHS = 5
+EPOCHS = 6
 
 
 class ConvNet(nn.Module):
     def __init__(self):
         super(ConvNet, self).__init__()
         self.layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2),
-                                     nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
+                                    nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
         self.layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2),
-                                     nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
+                                    nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
         self.drop_out = nn.Dropout()
         self.fc1 = nn.Linear(7 * 7 * 64, 1000)
         self.fc2 = nn.Linear(1000, 10)
+
+    def forward(self, x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = out.reshape(out.size(0), -1)
+        out = self.drop_out(out)
+        out = self.fc1(out)
+        out = self.fc2(out)
+        return out
+
+
+class DeepNet(nn.Module):
+    def __init__(self):
+        super(DeepNet, self).__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2),
+                                    nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
+        self.layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2),
+                                    nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
+        self.drop_out = nn.Dropout()
+        self.fc1 = nn.Linear(7 * 7 * 64, 10000)
+        self.fc2 = nn.Linear(10000, 10)
+
+    def forward(self, x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = out.reshape(out.size(0), -1)
+        out = self.drop_out(out)
+        out = self.fc1(out)
+        out = self.fc2(out)
+        return out
+
+
+class LightNet(nn.Module):
+    def __init__(self):
+        super(LightNet, self).__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2),
+                                    nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
+        self.layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2),
+                                    nn.ReLU(), nn.MaxPool2d(kernel_size=2, stride=2))
+        self.drop_out = nn.Dropout()
+        self.fc1 = nn.Linear(7 * 7 * 64, 500)
+        self.fc2 = nn.Linear(500, 10)
 
     def forward(self, x):
         out = self.layer1(x)
@@ -52,7 +93,7 @@ def get_data(x, y):
 
 
 def training(train, test):
-    model = ConvNet()
+    model = DeepNet()
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     history = {"train loss": [], "test loss": [], "train acc": [], "test acc": []}
@@ -82,13 +123,23 @@ def training(train, test):
                 total += y.size(0)
                 correct += (predicted == y).sum().item()
         print("Test Accuracy: {:.2f}".format(correct / total))
-    torch.save(model.state_dict(), "attacked_mnist_weights.pt")
+    torch.save(model.state_dict(), "mnist_deep_weights.pt")
+
+
+class TripleNet(nn.Module):
+    def __init__(self):
+        super(TripleNet, self).__init__()
+        self.m1 = ConvNet()
+        self.m2 = ConvNet()
+        self.m3 = ConvNet()
+
+    def forward(self, x):
+        return (self.m1(x) + self.m2(x) + self.m3(x)) / 3
 
 
 if __name__ == "__main__":
     data = pd.read_csv("train.csv").values
     x, y = data[:, 1:], data[:, 0]
-    voiced_x, voiced_y = random_voice_attack(x, y, 1, 6, 1500)
-    voiced_x = voiced_x.reshape(len(x), 1, 28, 28)
-    train, test = get_data(voiced_x, voiced_y)
+    x = x.reshape(len(x), 1, 28, 28)
+    train, test = get_data(x, y)
     training(train, test)
